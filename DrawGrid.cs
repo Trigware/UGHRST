@@ -50,6 +50,7 @@ public class DrawGrid : MonoBehaviour
             UpdateCameraValues();
             Render();
         }
+        MouseInteraction("", 0, Interactions.Hover, Button.Left, false);
     }
     private void RefreshSprites()
     {
@@ -88,7 +89,6 @@ public class DrawGrid : MonoBehaviour
     {
         Vector2 tileScale = GetTileScale();
         tile.transform.localScale = new Vector3(tileScale.x, tileScale.y, 1);
-        tileSize = tile.GetComponent<SpriteRenderer>().bounds.size;
         int startX = 0, endX = tileCount.x, startY = 0, endY = tileCount.y;
         if (frustumCulling)
             RenderableCellsForFrustumCulling(z, out startX, out startY, out endX, out endY);
@@ -238,6 +238,7 @@ public class DrawGrid : MonoBehaviour
     }
     public void Render()
     {
+        tileSize = tile.GetComponent<SpriteRenderer>().bounds.size;
         RefreshSprites();
         Delete();
         obscuredTiles.RemoveAll(i => true);
@@ -249,7 +250,7 @@ public class DrawGrid : MonoBehaviour
     }
     public void Delete()
     {
-        GameObject[] cloneTiles = GameObject.FindGameObjectsWithTag("CloneTile");
+        GameObject[] cloneTiles = GetAllTileGameObjects();
         foreach (GameObject obj in cloneTiles)
         {
             #if UNITY_EDITOR
@@ -274,7 +275,7 @@ public class DrawGrid : MonoBehaviour
     }
     public GameObject GetTileGameObject(int x, int y, int z)
     {
-        GameObject[] tiles = GameObject.FindGameObjectsWithTag("CloneTile");
+        GameObject[] tiles = GetAllTileGameObjects();
         foreach (GameObject obj in tiles)
         {
             if (obj.transform.position == CalculateCellPosition(x, y, z))
@@ -284,7 +285,7 @@ public class DrawGrid : MonoBehaviour
     }
     public Dictionary<int, GameObject> GetLayerOfGameObjects(int x, int y)
     {
-        GameObject[] tiles = GameObject.FindGameObjectsWithTag("CloneTile");
+        GameObject[] tiles = GetAllTileGameObjects();
         Dictionary<int, GameObject> result = new();
         foreach (GameObject obj in tiles)
         {
@@ -295,6 +296,10 @@ public class DrawGrid : MonoBehaviour
             }
         }
         return result;
+    }
+    public GameObject[] GetAllTileGameObjects()
+    {
+        return GameObject.FindGameObjectsWithTag("CloneTile");
     }
     public bool CheckTileTransparency(int x, int y, int z)
     {
@@ -352,27 +357,71 @@ public class DrawGrid : MonoBehaviour
         SetSprite(set, x, y, z);
         RefreshTile(x, y, z);
     }
-    [CustomEditor(typeof(DrawGrid))]
-    public class ButtonDrawGrid : Editor
+    public bool IsContainedWithinGrid(int x, int y, int z)
     {
-        public override void OnInspectorGUI()
+        return x >= 0 && y >= 0 && z >= 0 && x < tileCount.x && y < tileCount.y && z < defaultCell.Length;
+    }
+    public Vector2Int Hover()
+    {
+        Vector2 topLeftMostTile = CalculateCellPosition(0, 0, 0); topLeftMostTile.x -= tileSize.x / 2; topLeftMostTile.y += tileSize.y / 2;
+        Vector2 mousePosition = myCamera.ScreenToWorldPoint(Input.mousePosition);
+
+        return new((int)((mousePosition.x - topLeftMostTile.x) / tileSize.x), (int)Math.Abs((topLeftMostTile.y - mousePosition.y) / tileSize.y));
+    }
+    public void GeneralInteraction(string set, int z, bool interacting, bool interactOnlyWhenRendered = true)
+    {
+        Vector2Int hoveredTile = Hover();
+        if ((!interactOnlyWhenRendered || GetTileGameObject(hoveredTile.x, hoveredTile.y, z) != null) && IsContainedWithinGrid(hoveredTile.x, hoveredTile.y, z) && interacting)
+            SetRefresh(set, hoveredTile.x, hoveredTile.y, z);
+    }
+    public enum Interactions
+    {
+        Hover,
+        Click,
+        Hold,
+        Release
+    }
+    public enum Button
+    {
+        Left,
+        Right,
+        Middle
+    }
+    public void MouseInteraction(string set, int z, Interactions interaction = Interactions.Click, Button button = Button.Left, bool interactOnlyWhenRendered = true)
+    {
+        switch (interaction)
         {
-            DrawGrid wantedClass = (DrawGrid)target;
-            base.OnInspectorGUI();
-            if (GUILayout.Button("Update Grid"))
-                wantedClass.Render();
-            if (GUILayout.Button("Restore Tile Data to Defaults"))
-                wantedClass.ClearRender();
-            if (GUILayout.Button("Delete Grid"))
-                wantedClass.Delete();
-            if (GUILayout.Button("Test Function A"))
-            {
-                wantedClass.SetSprite("", 0, 0, 0);
-            }
-            if (GUILayout.Button("Test Function B"))
-            {
-                wantedClass.RefreshTile(0, 0, 0);
-            }
+            case Interactions.Hover:
+                GeneralInteraction(set, z, true, interactOnlyWhenRendered); break;
+            case Interactions.Click:
+                GeneralInteraction(set, z, Input.GetMouseButtonDown((int)button), interactOnlyWhenRendered); break;
+            case Interactions.Hold:
+                GeneralInteraction(set, z, Input.GetMouseButton((int)button), interactOnlyWhenRendered); break;
+            case Interactions.Release:
+                GeneralInteraction(set, z, Input.GetMouseButtonUp((int)button), interactOnlyWhenRendered); break;
+        }
+    }
+}
+[CustomEditor(typeof(DrawGrid))]
+public class ButtonDrawGrid : Editor
+{
+    public override void OnInspectorGUI()
+    {
+        DrawGrid wantedClass = (DrawGrid)target;
+        base.OnInspectorGUI();
+        if (GUILayout.Button("Update Grid"))
+            wantedClass.Render();
+        if (GUILayout.Button("Restore Tile Data to Defaults"))
+            wantedClass.ClearRender();
+        if (GUILayout.Button("Delete Grid"))
+            wantedClass.Delete();
+        if (GUILayout.Button("Test Function A"))
+        {
+            wantedClass.SetSprite("", 0, 0, 0);
+        }
+        if (GUILayout.Button("Test Function B"))
+        {
+            wantedClass.RefreshTile(0, 0, 0);
         }
     }
 }
