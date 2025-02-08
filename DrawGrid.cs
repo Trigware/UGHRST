@@ -31,6 +31,7 @@ public class DrawGrid : MonoBehaviour
     [HideInInspector] public Dictionary<Vector3, string> grid = new();
     [HideInInspector] public List<string> spriteString = new();
 
+    private (Vector3Int, string, string) hoveringTile = (-Vector3Int.one, "", "");
     private float leftBoundX, rightBoundX, upBoundY, downBoundY;
     private List<bool> containsAlpha = new();
     private List<List<bool>> obscuredTiles = new();
@@ -41,6 +42,7 @@ public class DrawGrid : MonoBehaviour
     {
         RefreshSprites();
         UpdateCameraValues();
+        tileSize = tile.GetComponent<SpriteRenderer>().bounds.size;
     }
     private void Update()
     {
@@ -50,7 +52,7 @@ public class DrawGrid : MonoBehaviour
             UpdateCameraValues();
             Render();
         }
-        MouseInteraction("", 0, Interactions.Hover, Button.Left, false);
+        RefreshSetTileHoveredOver("1", 0);
     }
     private void RefreshSprites()
     {
@@ -89,6 +91,7 @@ public class DrawGrid : MonoBehaviour
     {
         Vector2 tileScale = GetTileScale();
         tile.transform.localScale = new Vector3(tileScale.x, tileScale.y, 1);
+        tileSize = tile.GetComponent<SpriteRenderer>().bounds.size;
         int startX = 0, endX = tileCount.x, startY = 0, endY = tileCount.y;
         if (frustumCulling)
             RenderableCellsForFrustumCulling(z, out startX, out startY, out endX, out endY);
@@ -238,11 +241,10 @@ public class DrawGrid : MonoBehaviour
     }
     public void Render()
     {
-        tileSize = tile.GetComponent<SpriteRenderer>().bounds.size;
         RefreshSprites();
         Delete();
         obscuredTiles.RemoveAll(i => true);
-        if (maxOccupiedSpace.x > 0 && maxOccupiedSpace.y > 0)
+        if (maxOccupiedSpace.x > 0 && maxOccupiedSpace.y > 0 && tileCount.x > 0 && tileCount.y > 0)
         {
             for (int z = 0; z < defaultCell.Length; z++)
                 RenderGrid(z);
@@ -311,7 +313,13 @@ public class DrawGrid : MonoBehaviour
         Set(set, x, y, z);
         GameObject tile = GetTileGameObject(x, y, z);
         if (tile != null)
-            tile.GetComponent<SpriteRenderer>().sprite = GetSpriteByName(set);
+        {
+            Sprite tileSprite = GetSpriteByName(set);
+            if (tileSprite != null)
+                tile.GetComponent<SpriteRenderer>().sprite = tileSprite;
+            else
+                Destroy(tile);
+        }
         else
             DrawCell(x, y, z);
     }
@@ -354,8 +362,11 @@ public class DrawGrid : MonoBehaviour
     }
     public void SetRefresh(string set, int x, int y, int z)
     {
-        SetSprite(set, x, y, z);
-        RefreshTile(x, y, z);
+        if (Get(x, y, z) != set)
+        {
+            SetSprite(set, x, y, z);
+            RefreshTile(x, y, z);
+        }        
     }
     public bool IsContainedWithinGrid(int x, int y, int z)
     {
@@ -365,8 +376,12 @@ public class DrawGrid : MonoBehaviour
     {
         Vector2 topLeftMostTile = CalculateCellPosition(0, 0, 0); topLeftMostTile.x -= tileSize.x / 2; topLeftMostTile.y += tileSize.y / 2;
         Vector2 mousePosition = myCamera.ScreenToWorldPoint(Input.mousePosition);
+        if (mousePosition.x < topLeftMostTile.x)
+            topLeftMostTile.x++;
+        if (mousePosition.y > topLeftMostTile.y)
+            topLeftMostTile.y--;
 
-        return new((int)((mousePosition.x - topLeftMostTile.x) / tileSize.x), (int)Math.Abs((topLeftMostTile.y - mousePosition.y) / tileSize.y));
+        return new((int)((mousePosition.x - topLeftMostTile.x) / tileSize.x), (int)((topLeftMostTile.y - mousePosition.y) / tileSize.y));
     }
     public void GeneralInteraction(string set, int z, bool interacting, bool interactOnlyWhenRendered = true)
     {
@@ -400,6 +415,40 @@ public class DrawGrid : MonoBehaviour
             case Interactions.Release:
                 GeneralInteraction(set, z, Input.GetMouseButtonUp((int)button), interactOnlyWhenRendered); break;
         }
+    }
+    public void RefreshSetTileHoveredOver(string set, int z)
+    {
+        Vector2Int tilePosition = Hover();
+        Vector3Int positionProper = new Vector3Int(tilePosition.x, tilePosition.y, z);
+        Vector3Int previousTilePosition = hoveringTile.Item1;
+
+        GameObject obj = GetTileGameObject(tilePosition.x, tilePosition.y, z);
+        bool prevMouseOutOfBounds = previousTilePosition == -Vector3Int.one;
+        if (obj == null)
+        {
+            if (!prevMouseOutOfBounds)
+            {
+                SetRefresh(hoveringTile.Item2, previousTilePosition.x, previousTilePosition.y, previousTilePosition.z);
+                hoveringTile = (-Vector3Int.one, "", "");
+            }
+            return;
+        }
+        string name = GetNameByObject(obj);
+        if (previousTilePosition != positionProper)
+        {
+            if (!prevMouseOutOfBounds)
+                SetRefresh(name, previousTilePosition.x, previousTilePosition.y, previousTilePosition.z);
+            hoveringTile = (positionProper, name, set);
+        } else
+            SetRefresh(set, positionProper.x, positionProper.y, positionProper.z);
+    }
+    public string GetNameByObject(GameObject obj)
+    {
+        Sprite spr = obj.GetComponent<SpriteRenderer>().sprite;
+        int index = tileSprites.IndexOf(spr);
+        if (index == -1)
+            return "";
+        return spriteString[index];
     }
 }
 [CustomEditor(typeof(DrawGrid))]
