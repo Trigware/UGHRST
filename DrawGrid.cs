@@ -1,11 +1,10 @@
-using JetBrains.Annotations;
 using System;
 using System.Collections.Generic;
+using System.Data.SqlTypes;
 using System.Linq;
 using UnityEditor;
 using UnityEngine;
 using static UnityEditor.Experimental.GraphView.GraphView;
-using static UnityEditor.FilePathAttribute;
 
 public class DrawGrid : MonoBehaviour
 {
@@ -33,7 +32,8 @@ public class DrawGrid : MonoBehaviour
     private Dictionary<Vector3Int, Color> gridColors = new();
     private List<string> spriteString = new();
 
-    private (Vector3Int, string, string) hoveringTile = (-Vector3Int.one, "", "");
+    private (Vector3Int pos, string data) hoveringTileString = (-Vector3Int.one, "");
+    private (Vector3Int pos, Color data) hoveringTileColor = (-Vector3Int.one, new());
     private float leftBoundX, rightBoundX, upBoundY, downBoundY;
     private List<bool> containsAlpha = new();
     private List<List<bool>> obscuredTiles = new();
@@ -54,6 +54,7 @@ public class DrawGrid : MonoBehaviour
             UpdateCameraValues();
             Render();
         }
+        SetRefresh(HSVtoRGB(269, 100, 100, 50), new(0, 0, 0));
     }
     private void RefreshSprites()
     {
@@ -181,6 +182,26 @@ public class DrawGrid : MonoBehaviour
             renderer.color = gridColors[location];
         } catch { }
     }
+    private void HandleTileColors(Vector3Int location, SpriteRenderer renderer)
+    {
+        HandleTileColors(location.x, location.y, location.z, renderer);
+    }
+    private void ClearLayerBuilder<TValue>(int layer, Dictionary<Vector3Int, TValue> grid)
+    {
+        List<Vector3Int> keysToRemove = new();
+        foreach (Vector3Int key in grid.Keys)
+        {
+            if (key.z == layer)
+                keysToRemove.Add(key);
+        }
+        foreach (Vector3Int key in keysToRemove)
+            grid.Remove(key);
+    }
+    public Color HSVtoRGB(float h, float s, float v, float a = 100)
+    {
+        Color conversion = Color.HSVToRGB(h / 360f, s / 100f, v / 100f);
+        return new(conversion.r, conversion.g, conversion.b, a/100f);
+    }
     public void DrawCell(int x, int y, int z, Vector2 tileScale)
     {
         Vector3Int tileGridPosition = new(x, y, z);
@@ -218,7 +239,10 @@ public class DrawGrid : MonoBehaviour
     }
     public void Set(string set, int x, int y, int z)
     {
-        grid[new(x, y, z)] = set;
+        if (grid.ContainsKey(new Vector3Int(x, y, z)))
+            grid[new(x, y, z)] = set;
+        else
+            grid.Add(new(x, y, z), set);
     }
     public string Get(int x, int y, int z)
     {
@@ -237,14 +261,7 @@ public class DrawGrid : MonoBehaviour
     }
     public void ClearLayer(int layer)
     {
-        List<Vector3Int> keysToRemove = new();
-        foreach (Vector3Int key in grid.Keys)
-        {
-            if (key.z == layer)
-                keysToRemove.Add(key);
-        }
-        foreach (Vector3Int key in keysToRemove)
-            grid.Remove(key);
+        ClearLayerBuilder(layer, grid);
     }
     public void ClearRender()
     {
@@ -254,7 +271,7 @@ public class DrawGrid : MonoBehaviour
     public void ClearLayerRender(int layer)
     {
         ClearLayer(layer);
-        Render();
+        RenderGrid(layer);
     }
     public void Render()
     {
@@ -306,7 +323,7 @@ public class DrawGrid : MonoBehaviour
     {
         return GetTileGameObject(location.x, location.y, location.z);
     }
-    public Dictionary<int, GameObject> GetLayerOfGameObjects(int x, int y)
+    public Dictionary<int, GameObject> GetAllTilesAtPosition(int x, int y)
     {
         GameObject[] tiles = GetAllTileGameObjects();
         Dictionary<int, GameObject> result = new();
@@ -357,7 +374,7 @@ public class DrawGrid : MonoBehaviour
             {
                 if (!CheckTileTransparency(x, y, z - 1))
                 {
-                    Dictionary<int, GameObject> layerGameObj = GetLayerOfGameObjects(x, y);
+                    Dictionary<int, GameObject> layerGameObj = GetAllTilesAtPosition(x, y);
                     DeleteTileKeepData(x, y, z);
                     while (z < defaultCell.Length)
                     {
@@ -385,15 +402,29 @@ public class DrawGrid : MonoBehaviour
             }
         }
     }
-    public void SetRefresh(string set, int x, int y, int z)
+    public void SetRefresh<T>(T set, int x, int y, int z)
     {
-        if (Get(x, y, z) != set)
+        if (set is string setString)
         {
-            SetSprite(set, x, y, z);
-            RefreshTile(x, y, z);
-        }        
+            if (Get(x, y, z) != setString)
+            {
+                SetSprite(setString, x, y, z);
+                RefreshTile(x, y, z);
+            }
+        }
+        else if (set is Color setColor)
+        {
+            if (GetColor(x, y, z) != setColor)
+            {
+                SetSpriteColors(setColor, x, y, z);
+                RefreshTile(x, y, z);
+            }
+        }
+        else
+            Debug.Log("Tato funkce podporuje pouze string a Color!");
+
     }
-    public void SetRefresh(string set, Vector3Int location)
+    public void SetRefresh<T>(T set, Vector3Int location)
     {
         SetRefresh(set, location.x, location.y, location.z);
     }
@@ -412,11 +443,21 @@ public class DrawGrid : MonoBehaviour
 
         return new((int)((mousePosition.x - topLeftMostTile.x) / tileSize.x), (int)((topLeftMostTile.y - mousePosition.y) / tileSize.y));
     }
-    public void GeneralInteraction(string set, int z, bool interacting, bool interactOnlyWhenRendered = true)
+    private void GeneralInteractionBuilder<T>(T set, int z, bool interacting, bool interactOnlyWhenRendered = true)
     {
         Vector2Int hoveredTile = Hover();
         if ((!interactOnlyWhenRendered || GetTileGameObject(hoveredTile.x, hoveredTile.y, z) != null) && IsContainedWithinGrid(new(hoveredTile.x, hoveredTile.y, z)) && interacting)
-            SetRefresh(set, hoveredTile.x, hoveredTile.y, z);
+        {
+            SetRefresh(set, new(hoveredTile.x, hoveredTile.y, z));
+        }
+    }
+    public void GeneralInteraction(string set, int z, bool interacting, bool interactOnlyWhenRendered = true)
+    {
+        GeneralInteractionBuilder(set, z, interacting, interactOnlyWhenRendered);
+    }
+    public void GeneralInteraction(Color set, int z, bool interacting, bool interactOnlyWhenRendered = true)
+    {
+        GeneralInteractionBuilder(set, z, interacting, interactOnlyWhenRendered);
     }
     public enum Interactions
     {
@@ -431,43 +472,65 @@ public class DrawGrid : MonoBehaviour
         Right,
         Middle
     }
-    public void MouseInteraction(string set, int z, Interactions interaction = Interactions.Click, Button button = Button.Left, bool interactOnlyWhenRendered = true)
+    public void MouseInteraction<T>(T set, int z, Interactions interaction = Interactions.Click, Button button = Button.Left, bool interactOnlyWhenRendered = true)
     {
-        switch (interaction)
+        bool isInteracting = interaction switch
         {
-            case Interactions.Hover:
-                GeneralInteraction(set, z, true, interactOnlyWhenRendered); break;
-            case Interactions.Click:
-                GeneralInteraction(set, z, Input.GetMouseButtonDown((int)button), interactOnlyWhenRendered); break;
-            case Interactions.Hold:
-                GeneralInteraction(set, z, Input.GetMouseButton((int)button), interactOnlyWhenRendered); break;
-            case Interactions.Release:
-                GeneralInteraction(set, z, Input.GetMouseButtonUp((int)button), interactOnlyWhenRendered); break;
-        }
+            Interactions.Hover => true,
+            Interactions.Click => Input.GetMouseButtonDown((int)button),
+            Interactions.Hold => Input.GetMouseButton((int)button),
+            Interactions.Release => Input.GetMouseButtonUp((int)button),
+            _ => false
+        };
+        GeneralInteractionBuilder(set, z, isInteracting, interactOnlyWhenRendered);
     }
-    public void RefreshSetTileHoveredOver(string set, int z)
+    public void RefreshSetTileHoveredOver<T>(T set, int z)
     {
         Vector2Int tilePosition = Hover();
         Vector3Int positionProper = new Vector3Int(tilePosition.x, tilePosition.y, z);
-        Vector3Int previousTilePosition = hoveringTile.Item1;
+        Vector3Int previousTilePosition = hoveringTileString.pos;
+        if (previousTilePosition == -Vector3Int.one)
+            previousTilePosition = hoveringTileColor.pos;
 
+        Type type = typeof(T);
+        if (!(type == typeof(string) || type == typeof(Color)))
+        {
+            Debug.LogError("Tato funkce podporuje jen string a Color!");
+            return;
+        }
         GameObject obj = GetTileGameObject(positionProper);
         bool prevMouseOutOfBounds = previousTilePosition == -Vector3Int.one;
         if (obj == null)
         {
             if (!prevMouseOutOfBounds)
             {
-                SetRefresh(hoveringTile.Item2, previousTilePosition);
-                hoveringTile = (-Vector3Int.one, "", "");
+                if (type == typeof(string))
+                {
+                    SetRefresh(hoveringTileString.data, previousTilePosition);
+                    hoveringTileString = (-Vector3Int.one, "");
+                } else if (type == typeof(Color))
+                {
+                    SetRefresh(hoveringTileColor.data, previousTilePosition);
+                    hoveringTileColor = (-Vector3Int.one, new());
+                }
             }
             return;
         }
         string name = GetNameByObject(obj);
         if (previousTilePosition != positionProper)
         {
-            if (!prevMouseOutOfBounds)
-                SetRefresh(name, previousTilePosition);
-            hoveringTile = (positionProper, name, set);
+            if (type == typeof(string))
+            {
+                if (!prevMouseOutOfBounds)
+                    SetRefresh(hoveringTileString.data, previousTilePosition);
+                hoveringTileString = (positionProper, name);
+            } else if (type == typeof(Color))
+            {
+                if (!prevMouseOutOfBounds)
+                    SetRefresh(hoveringTileColor.data, previousTilePosition);
+                hoveringTileColor = (positionProper, GetColor(positionProper));
+            }
+            
         } else
             SetRefresh(set, positionProper);
     }
@@ -479,21 +542,27 @@ public class DrawGrid : MonoBehaviour
             return "";
         return spriteString[index];
     }
-    public void SetColor(int x, int y, int z, Color color)
+    public void SetColor(Vector3Int location, Color color)
     {
-        Vector3Int location = new(x, y, z);
         if (gridColors.ContainsKey(location))
             gridColors[location] = color;
         else
             gridColors.Add(location, color);
     }
-    public Color GetColor(int x, int y, int z)
+    public void SetColor(int x, int y, int z, Color color)
     {
-        Vector3Int location = new(x, y, z);
+        SetColor(new(x, y, z), color);
+    }
+    public Color GetColor(Vector3Int location)
+    {
         if (gridColors.ContainsKey(location))
             return gridColors[location];
         else
             return new(1, 1, 1);
+    }
+    public Color GetColor(int x, int y, int z)
+    {
+        return GetColor(new(x, y, z));
     }
     public void ClearColor()
     {
@@ -504,10 +573,31 @@ public class DrawGrid : MonoBehaviour
         ClearColor();
         Render();
     }
-    public void SetSpriteColors(int x, int y, int z, Color color)
+    public void ClearLayerColor(int layer)
     {
-        SetColor(x, y, z, color);
-        HandleTileColors(x, y, z, GetTileGameObject(x, y, z).GetComponent<SpriteRenderer>());
+        ClearLayerBuilder(layer, gridColors);
+    }
+    public void ClearLayerColorRender(int layer)
+    {
+        ClearLayerColor(layer);
+        RenderGrid(layer);
+    }
+    public void ClearAllRender()
+    {
+        grid.Clear();
+        gridColors.Clear();
+        Render();
+    }
+    public void SetSpriteColors(Color color, Vector3Int location)
+    {
+        SetColor(location, color);
+        GameObject obj = GetTileGameObject(location);
+        if (obj != null)
+            HandleTileColors(location, obj.GetComponent<SpriteRenderer>());
+    }
+    public void SetSpriteColors(Color color, int x, int y, int z)
+    {
+        SetSpriteColors(color, new(x, y, z));
     }
 }
 [CustomEditor(typeof(DrawGrid))]
@@ -520,12 +610,12 @@ public class ButtonDrawGrid : Editor
         if (GUILayout.Button("Update Grid"))
             wantedClass.Render();
         if (GUILayout.Button("Restore Tile Data to Defaults"))
-            wantedClass.ClearRender();
+            wantedClass.ClearAllRender();
         if (GUILayout.Button("Delete Grid"))
             wantedClass.Delete();
         if (GUILayout.Button("Test Function A"))
         {
-            wantedClass.SetSpriteColors(0, 0, 0, new(0, 1, 1));
+            wantedClass.SetRefresh(new Color(0, 1, 0), new(0, 0, 0));
         }
         if (GUILayout.Button("Test Function B"))
         {
