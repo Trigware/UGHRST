@@ -6,38 +6,38 @@ using UnityEngine;
 
 public class GS : MonoBehaviour
 {
-    [SerializeField] private static Camera myCamera;
-    [SerializeField] private static GameObject tile;
+    private List<string> spriteString = new();
+    private float aspectRatio = 0, oldAspect = 0;
 
-    public static Vector2Int tileCount;
-    public static Vector2 cameraOccupationOffset;
-    public static Vector2 maxOccupiedSpace;
-    public static float gridScale;
+    [SerializeField] private Camera myCamera;
+    [SerializeField] private GameObject tile;
+    [SerializeField] private Sprite[] defaultTile;
+    [SerializeField] public List<Sprite> tileSprites;
+    public Neighbours[] commonNeighboursDefinition = new Neighbours[] { Neighbours.Adjacent, Neighbours.Diagonals };
 
-    public static Vector3 gridPosition;
-    public static Vector3 positionFixedToCamera;
+    public Vector2Int tileCount;
+    public Vector2 cameraOccupationOffset;
+    public Vector2 maxOccupiedSpace;
+    public float gridScale;
 
-    [SerializeField] private static Sprite[] defaultTile;
-    [SerializeField] public static List<Sprite> tileSprites;
+    public Vector3 gridPosition;
+    public Vector3 positionFixedToCamera;
 
-    public static Neighbours[] commonNeighboursDefinition;
-    public static bool renderOnAspectChange;
-    public static bool renderObscuredTiles;
-    public static bool dynamicScaling;
-    public static bool frustumCulling;
-    public static bool alwaysUpdate;
+    public bool renderOnAspectChange;
+    public bool renderObscuredTiles;
+    public bool dynamicScaling;
+    public bool frustumCulling;
+    public bool alwaysUpdate;
 
-    private static Dictionary<Vector3Int, string> grid = new();
-    private static Dictionary<Vector3Int, Color> gridColors = new();
-    private static List<string> spriteString = new();
+    private Dictionary<Vector3Int, string> grid = new();
+    private Dictionary<Vector3Int, Color> gridColors = new();
 
-    private static (Vector3Int pos, string data) hoveringTileString = (-Vector3Int.one, "");
-    private static (Vector3Int pos, Color data) hoveringTileColor = (-Vector3Int.one, new());
-    private static float leftBoundX, rightBoundX, upBoundY, downBoundY;
-    private static List<bool> containsAlpha = new();
-    private static List<Vector2> obscuredTiles = new();
-    private static float aspectRatio = 0, oldAspect = 0;
-    private static Vector2 tileSize;
+    private (Vector3Int pos, string data) hoveringTileString = (-Vector3Int.one, "");
+    private (Vector3Int pos, Color data) hoveringTileColor = (-Vector3Int.one, new());
+    private float leftBoundX, rightBoundX, upBoundY, downBoundY;
+    private List<bool> containsAlpha = new();
+    private List<Vector2> obscuredTiles = new();
+    private Vector2 tileSize;
 
     public enum Interactions
     {
@@ -58,66 +58,110 @@ public class GS : MonoBehaviour
         Adjacent,
         Diagonals
     }
+    public enum DataChangedTo
+    {
+        First,
+        Second,
+        Error
+    }
+    private static GS instance;
+    public static GS I
+    {
+        get
+        {
+            if (instance == null)
+            {
+                instance = FindAnyObjectByType<GS>();
+                if (instance == null)
+                    Debug.LogError("Žádný GameObject nemá komponent GS.cs!");
+            }
+            return instance;
+        }
+    }
+    public draw Draw { get; private set; }
+    public data Data { get; private set; }
+    public clear Clear { get; private set; }
+    public interact Interact { get; private set; }
+    public tiles Tiles { get; private set; }
+    public objects Object { get; private set; }
+    private void Awake()
+    {
+        if (instance == null)
+            instance = this;
+        else if (instance != this)
+        {
+            Debug.LogWarning($"Lze mít pouze 1 GameObject, a tak bude tento GameObject: \"{gameObject}\" smazán");
+            Destroy(gameObject);
+        }
+        Draw = new();
+        Data = new();
+        Clear = new();
+        Interact = new();
+        Tiles = new();
+        Object = new();
+    }
     private void Start()
     {
-        Draw.RefreshSprites();
-        Draw.UpdateCameraValues();
+        I.Draw.RefreshSprites();
+        I.Draw.UpdateCameraValues();
     }
     private void Update()
     {
         if (renderOnAspectChange && oldAspect != myCamera.aspect)
-            Draw.All();
+            I.Draw.All();
         if (alwaysUpdate)
         {
-            Draw.RefreshSprites();
-            Draw.UpdateCameraValues();
-            Draw.All();
+            I.Draw.RefreshSprites();
+            I.Draw.UpdateCameraValues();
+            I.Draw.All();
         }
     }
-    public static class Draw
+    public class draw
     {
-        public static void All()
+        public void All()
         {
             RefreshSprites();
             Delete();
-            obscuredTiles.RemoveAll(i => true);
-            if (maxOccupiedSpace.x > 0 && maxOccupiedSpace.y > 0 && tileCount.x > 0 && tileCount.y > 0)
+            I.obscuredTiles.RemoveAll(i => true);
+            if (I.maxOccupiedSpace.x > 0 && I.maxOccupiedSpace.y > 0 && I.tileCount.x > 0 && I.tileCount.y > 0)
             {
-                oldAspect = myCamera.aspect;
-                for (int z = 0; z < defaultTile.Length; z++)
+                I.oldAspect = I.myCamera.aspect;
+                for (int z = 0; z < I.defaultTile.Length; z++)
                     Grid(z);
             }
         }
-        public static void Grid(int z)
+        public void Grid(int z)
         {
-            Vector2 tileScale = Tiles.GetScale();
-            tile.transform.localScale = new Vector3(tileScale.x, tileScale.y, 1);
-            tileSize = tile.GetComponent<SpriteRenderer>().bounds.size;
-            int startX = 0, endX = tileCount.x, startY = 0, endY = tileCount.y;
-            if (frustumCulling)
-                Tiles.RenderBounds(z, out startX, out startY, out endX, out endY);
+            Vector2 tileScale = I.Tiles.GetScale();
+            I.tile.transform.localScale = new Vector3(tileScale.x, tileScale.y, 1);
+            I.tileSize = I.tile.GetComponent<SpriteRenderer>().bounds.size;
+            int startX = 0, endX = I.tileCount.x, startY = 0, endY = I.tileCount.y;
+            if (I.frustumCulling)
+                I.Tiles.RenderBounds(z, out startX, out startY, out endX, out endY);
             for (int i = startX; i < endX; i++)
             {
                 for (int j = startY; j < endY; j++)
                 {
-                    if (renderObscuredTiles || z == 0 || !Tiles.Obscured(i, j, z))
+                    if (I.renderObscuredTiles || z == 0 || !I.Tiles.Obscured(i, j, z))
                         Tile(i, j, z, tileScale);
                 }
             }
         }
-        public static void Tile(int x, int y, int z, Vector2 tileScale)
+        public void Tile(int x, int y, int z, Vector2 tileScale)
         {
             Vector3Int tileGridPosition = new(x, y, z);
-            bool containsKey = grid.ContainsKey(tileGridPosition);
-            if (containsKey || defaultTile.Length > 0)
+            if (I.Object.Tile(tileGridPosition) != null)
+                DeleteTileKeepData(x, y, z);
+            bool containsKey = I.grid.ContainsKey(tileGridPosition);
+            if (containsKey || I.defaultTile.Length > 0)
             {
-                Sprite tileSprite = defaultTile[z];
-                if (grid.ContainsKey(tileGridPosition))
-                    tileSprite = Tiles.GetSpriteByName(grid[tileGridPosition]);
+                Sprite tileSprite = I.defaultTile[z];
+                if (I.grid.ContainsKey(tileGridPosition))
+                    tileSprite = I.Tiles.GetSpriteByName(I.grid[tileGridPosition]);
                 if (tileSprite != null)
                 {
-                    GameObject clonedTile = Instantiate(tile);
-                    clonedTile.transform.position = global::GS.Tiles.Position(x, y, z);
+                    GameObject clonedTile = Instantiate(I.tile);
+                    clonedTile.transform.position = I.Tiles.Position(x, y, z);
                     clonedTile.transform.localScale = new Vector3(tileScale.x, tileScale.y, 1);
                     clonedTile.tag = "CloneTile";
 
@@ -127,36 +171,36 @@ public class GS : MonoBehaviour
                 }
             }
         }
-        public static void Tile(int x, int y, int z)
+        public void Tile(int x, int y, int z)
         {
-            Tile(x, y, z, Tiles.GetScale());
+            Tile(x, y, z, I.Tiles.GetScale());
         }
-        public static void TileColor(int x, int y, int z, SpriteRenderer renderer)
+        public void TileColor(int x, int y, int z, SpriteRenderer renderer)
         {
             Vector3Int location = new(x, y, z);
             try
             {
-                renderer.color = gridColors[location];
+                renderer.color = I.gridColors[location];
             }
             catch { }
         }
-        public static void TileColor(Vector3Int location, SpriteRenderer renderer)
+        public void TileColor(Vector3Int location, SpriteRenderer renderer)
         {
             TileColor(location.x, location.y, location.z, renderer);
         }
-        public static Color HSVtoRGB(float h, float s, float v, float a = 100)
+        public Color HSVtoRGB(float h, float s, float v, float a = 100)
         {
             Color conversion = Color.HSVToRGB(h / 360f, s / 100f, v / 100f);
             return new(conversion.r, conversion.g, conversion.b, a / 100f);
         }
-        public static void RefreshSprites()
+        public void RefreshSprites()
         {
-            foreach (Sprite spr in defaultTile)
+            foreach (Sprite spr in I.defaultTile)
             {
-                if (!tileSprites.Contains(spr))
-                    tileSprites.Add(spr);
+                if (!I.tileSprites.Contains(spr))
+                    I.tileSprites.Add(spr);
             }
-            foreach (Sprite spr in tileSprites)
+            foreach (Sprite spr in I.tileSprites)
             {
                 string handledString = spr.ToString();
                 try
@@ -164,13 +208,13 @@ public class GS : MonoBehaviour
                     handledString = handledString.Substring(0, handledString.LastIndexOf("_0"));
                 }
                 catch { }
-                if (!spriteString.Contains(handledString))
-                    spriteString.Add(handledString);
-                if (!renderObscuredTiles)
-                    containsAlpha.Add(SpriteTransparent(spr));
+                if (!I.spriteString.Contains(handledString))
+                    I.spriteString.Add(handledString);
+                if (!I.renderObscuredTiles)
+                    I.containsAlpha.Add(SpriteTransparent(spr));
             }
         }
-        public static bool SpriteTransparent(Sprite spr)
+        public bool SpriteTransparent(Sprite spr)
         {
             if (spr == null)
                 return true;
@@ -182,22 +226,22 @@ public class GS : MonoBehaviour
             }
             return false;
         }
-        public static int GetIndexOfSprite(int x, int y, int z)
+        public int GetIndexOfSprite(int x, int y, int z)
         {
-            return spriteString.IndexOf(Data.Get(x, y, z));
+            return I.spriteString.IndexOf(I.Data.Get(x, y, z));
         }
-        public static void UpdateCameraValues()
+        public void UpdateCameraValues()
         {
-            Vector3 cameraPos = myCamera.transform.position;
-            float orthSize = myCamera.orthographicSize;
-            aspectRatio = myCamera.aspect;
-            leftBoundX = cameraPos.x - orthSize * aspectRatio; rightBoundX = cameraPos.x + orthSize * aspectRatio;
-            upBoundY = cameraPos.y + orthSize; downBoundY = cameraPos.y - orthSize;
-            tileSize = tile.GetComponent<SpriteRenderer>().bounds.size;
+            Vector3 cameraPos = I.myCamera.transform.position;
+            float orthSize = I.myCamera.orthographicSize;
+            I.aspectRatio = I.myCamera.aspect;
+            I.leftBoundX = cameraPos.x - orthSize * I.aspectRatio; I.rightBoundX = cameraPos.x + orthSize * I.aspectRatio;
+            I.upBoundY = cameraPos.y + orthSize; I.downBoundY = cameraPos.y - orthSize;
+            I.tileSize = I.tile.GetComponent<SpriteRenderer>().bounds.size;
         }
-        public static void Delete()
+        public void Delete()
         {
-            GameObject[] cloneTiles = Object.All();
+            GameObject[] cloneTiles = I.Object.All();
             foreach (GameObject obj in cloneTiles)
             {
                 #if UNITY_EDITOR
@@ -207,26 +251,26 @@ public class GS : MonoBehaviour
                 #endif
             }
         }
-        public static void DeleteTileKeepData(int x, int y, int z)
+        public void DeleteTileKeepData(int x, int y, int z)
         {
             try
             {
-                Destroy(Object.Tile(x, y, z));
+                Destroy(I.Object.Tile(x, y, z));
             }
             catch { }
         }
-        public static void DeleteTile(int x, int y, int z)
+        public void DeleteTile(int x, int y, int z)
         {
             DeleteTileKeepData(x, y, z);
-            Clear.Tile(x, y, z);
+            I.Clear.Tile(x, y, z);
         }
-        public static void SetSprite(string set, int x, int y, int z)
+        public void SetSprite(string set, int x, int y, int z)
         {
-            Data.Set(set, x, y, z);
-            GameObject tile = Object.Tile(x, y, z);
+            I.Data.Set(set, x, y, z);
+            GameObject tile = I.Object.Tile(x, y, z);
             if (tile != null)
             {
-                Sprite tileSprite = Tiles.GetSpriteByName(set);
+                Sprite tileSprite = I.Tiles.GetSpriteByName(set);
                 if (tileSprite != null)
                 {
                     SpriteRenderer renderer = tile.GetComponent<SpriteRenderer>();
@@ -239,20 +283,20 @@ public class GS : MonoBehaviour
             else
                 Tile(x, y, z);
         }
-        public static void RefreshTile(int x, int y, int z)
+        public void RefreshTile(int x, int y, int z)
         {
-            if (!renderObscuredTiles)
+            if (!I.renderObscuredTiles)
             {
                 z++;
-                if (defaultTile.Length > z)
+                if (I.defaultTile.Length > z)
                 {
-                    if (!Tiles.Opacity(x, y, z - 1))
+                    if (!I.Tiles.Opacity(x, y, z - 1))
                     {
-                        Dictionary<int, GameObject> layerGameObj = Object.GetAllTilesAtPosition(x, y);
+                        Dictionary<int, GameObject> layerGameObj = I.Object.AllAtPosition(x, y);
                         DeleteTileKeepData(x, y, z);
-                        while (z < defaultTile.Length)
+                        while (z < I.defaultTile.Length)
                         {
-                            if (Tiles.Opacity(x, y, z - 1) || Data.GetColor(x, y, z).a < 1f)
+                            if (I.Tiles.Opacity(x, y, z - 1) || I.Data.GetColor(x, y, z).a < 1f)
                                 break;
                             if (!layerGameObj.ContainsKey(z))
                                 Tile(x, y, z);
@@ -260,14 +304,14 @@ public class GS : MonoBehaviour
                             {
                                 int currentIndex = GetIndexOfSprite(x, y, z);
                                 if (currentIndex >= 0)
-                                    layerGameObj[z].GetComponent<SpriteRenderer>().sprite = tileSprites[currentIndex];
+                                    layerGameObj[z].GetComponent<SpriteRenderer>().sprite = I.tileSprites[currentIndex];
                             }
                             z++;
                         }
                     }
                     else
                     {
-                        while (z < defaultTile.Length)
+                        while (z < I.defaultTile.Length)
                         {
                             DeleteTileKeepData(x, y, z);
                             z++;
@@ -276,13 +320,13 @@ public class GS : MonoBehaviour
                 }
             }
         }
-        public static void SetRefresh<T>(T set, int x, int y, int z)
+        public void SetRefresh<T>(T set, int x, int y, int z)
         {
-            if (Tiles.ContainedWithinGrid(new(x, y, z)))
+            if (I.Tiles.ContainedWithinGrid(new(x, y, z)))
             {
                 if (set is string setString)
                 {
-                    if (Data.Get(x, y, z) != setString)
+                    if (I.Data.Get(x, y, z) != setString)
                     {
                         SetSprite(setString, x, y, z);
                         RefreshTile(x, y, z);
@@ -290,7 +334,7 @@ public class GS : MonoBehaviour
                 }
                 else if (set is Color setColor)
                 {
-                    if (Data.GetColor(x, y, z) != setColor)
+                    if (I.Data.GetColor(x, y, z) != setColor)
                     {
                         SetSpriteColors(setColor, x, y, z);
                         RefreshTile(x, y, z);
@@ -300,122 +344,160 @@ public class GS : MonoBehaviour
                     Debug.Log("Tato funkce podporuje pouze string a Color!");
             }
         }
-        public static void SetRefresh<T>(T set, Vector3Int location)
+        public void SetRefresh<T>(T set, Vector3Int location)
         {
             SetRefresh(set, location.x, location.y, location.z);
         }
-        public static void SetSpriteColors(Color color, Vector3Int location)
+        public void SetSpriteColors(Color color, Vector3Int location)
         {
-            Data.SetColor(color, location);
-            GameObject obj = Object.Tile(location);
+            I.Data.SetColor(color, location);
+            GameObject obj = I.Object.Tile(location);
             if (obj != null)
                 TileColor(location, obj.GetComponent<SpriteRenderer>());
         }
-        public static void SetSpriteColors(Color color, int x, int y, int z)
+        public void SetSpriteColors(Color color, int x, int y, int z)
         {
             SetSpriteColors(color, new(x, y, z));
         }
     }
-    public static class Data
+    public class data
     {
-        public static void Set<T>(T set, int x, int y, int z)
+        public void Set<T>(T set, int x, int y, int z)
         {
             if (set is string setString)
             {
-                if (grid.ContainsKey(new Vector3Int(x, y, z)))
-                    grid[new(x, y, z)] = setString;
+                if (I.grid.ContainsKey(new Vector3Int(x, y, z)))
+                    I.grid[new(x, y, z)] = setString;
                 else
-                    grid.Add(new(x, y, z), setString);
+                    I.grid.Add(new(x, y, z), setString);
             }
             else if (set is Color setColor)
             {
                 Vector3Int location = new(x, y, z);
-                if (gridColors.ContainsKey(location))
-                    gridColors[location] = setColor;
+                if (I.gridColors.ContainsKey(location))
+                    I.gridColors[location] = setColor;
                 else
-                    gridColors.Add(location, setColor);
+                    I.gridColors.Add(location, setColor);
             }
             else
                 Debug.LogError("Set jen podporuje string a Color!");
 
         }
-        public static void Set<T>(T set, Vector3Int location)
+        public void Set<T>(T set, Vector3Int location)
         {
             Set(set, location.x, location.y, location.z);
         }
-        public static string Get(int x, int y, int z)
+        public string Get(int x, int y, int z)
         {
-            int length = defaultTile[z].ToString().LastIndexOf("_0");
-            if (length < 0)
-                length = 0;
-            return grid.ContainsKey(new(x, y, z)) ? grid[new(x, y, z)] : defaultTile[z].ToString();
+            try
+            {
+                string defaultTile = I.defaultTile[z].ToString();
+                return I.grid.ContainsKey(new(x, y, z)) ? I.grid[new(x, y, z)] : defaultTile.Substring(0, defaultTile.LastIndexOf("_0"));
+            }
+            catch
+            {
+                return "";
+            }
         }
-        public static string Get(Vector3Int location)
+        public string Get(Vector3Int location)
         {
             return Get(location.x, location.y, location.z);
         }
-        public static void SetColor(Color color, Vector3Int location)
+        public void SetColor(Color color, Vector3Int location)
         {
             SetColor(color, location.x, location.y, location.z);
         }
-        public static void SetColor(Color color, int x, int y, int z)
+        public void SetColor(Color color, int x, int y, int z)
         {
             Set(color, x, y, z);
         }
-        public static Color GetColor(Vector3Int location)
+        public Color GetColor(Vector3Int location)
         {
-            if (gridColors.ContainsKey(location))
-                return gridColors[location];
+            if (I.gridColors.ContainsKey(location))
+                return I.gridColors[location];
             else
                 return new(1, 1, 1);
         }
-        public static Color GetColor(int x, int y, int z)
+        public Color GetColor(int x, int y, int z)
         {
             return GetColor(new(x, y, z));
         }
-        public static void ScatterTiles<T>(T tile, int count, int layer, List<Vector3Int> exceptions)
+        public DataChangedTo SetOscillate(string set1, string set2, Vector3Int location, string none = null)
         {
-            count = Math.Min(count, tileCount.x * tileCount.y - exceptions.Count);
+            if (none == null)
+                none = set1;
+            string tileData = I.Data.Get(location);
+            if (tileData == set1)
+            {
+                Set(set2, location);
+                return DataChangedTo.Second;
+            } else if (tileData == set2)
+            {
+                Set(set1, location);
+                return DataChangedTo.First;
+            }
+            Set(none, location);
+            return DataChangedTo.Error;
+        }
+        public DataChangedTo SetOscillateRefresh(string set1, string set2, Vector3Int location, string none = null)
+        {
+            DataChangedTo result = SetOscillate(set1, set2, location, none);
+            I.Draw.All();
+            return result;
+        }
+        public int ScatterTiles<T>(T tile, int count, int layer, List<Vector3Int> exceptions)
+        {
+            count = Math.Min(count, I.tileCount.x * I.tileCount.y - exceptions.Count);
             HashSet<Vector3> selectedPos = new();
             for (int i = 0; i < count; i++)
             {
                 Vector3Int randomPos = -Vector3Int.one;
                 do
                 {
-                    randomPos = new(UnityEngine.Random.Range(0, tileCount.x), UnityEngine.Random.Range(0, tileCount.y), layer);
+                    randomPos = new(UnityEngine.Random.Range(0, I.tileCount.x), UnityEngine.Random.Range(0, I.tileCount.y), layer);
                 } while (!(!selectedPos.Contains(randomPos) && !exceptions.Contains(randomPos)));
                 selectedPos.Add(randomPos);
                 Set(tile, randomPos.x, randomPos.y, layer);
             }
-            Draw.All();
+            I.Draw.All();
+            return count;
         }
-        public static void ScatterBeyondNeighbours<T>(T tile, int count, int layer, Vector2Int location)
+        public int ScatterBeyondNeighbours<T>(T tile, int count, int layer, Vector2Int location)
         {
-            Clear.DataLayer(layer);
-            ScatterTiles(tile, count, layer, Tiles.GetNeighbours(new(location.x, location.y, layer)));
+            I.Clear.DataLayer(layer);
+            return ScatterTiles(tile, count, layer, I.Tiles.GetNeighbours(new(location.x, location.y, layer)));
         }
-        public static void FloodFill(string areaTile, string newTile, Vector3Int startingLocation, int modifiedLayer, Neighbours[] neighboringTilesDefinition = null, bool includeBordering = true)
+        public int FloodFill(string areaTile, string[] newTiles, Vector3Int startingLocation, int[] modifiedLayers, (string tile, int layer) tileLayerTracker = default, Neighbours[] neighboringTilesDefinition = null, bool includeBordering = true)
         {
-            if (Tiles.ContainedWithinGrid(startingLocation))
+            if (newTiles.Length != modifiedLayers.Length)
+            {
+                Debug.LogError("Délka polí 'newTiles' a 'modifiedLayers' se musí rovnat!");
+                return 0;
+            }
+            int tileLayerCounter = 0;
+            if (I.Tiles.ContainedWithinGrid(startingLocation))
             {
                 if (Get(startingLocation.x, startingLocation.y, startingLocation.z) == areaTile)
                 {
                     if (neighboringTilesDefinition == null)
-                        neighboringTilesDefinition = commonNeighboursDefinition;
-                    Vector3Int handledLocation = new Vector3Int(startingLocation.x, startingLocation.y, modifiedLayer);
-                    HashSet<Vector3Int> replacedTiles = new() { handledLocation };
-                    Set(newTile, handledLocation);
-                    List<Vector3Int> nextStepOptions = Tiles.GetNeighbours(startingLocation, new Neighbours[] { Neighbours.Adjacent, Neighbours.Diagonals });
+                        neighboringTilesDefinition = I.commonNeighboursDefinition;
+                    HashSet<Vector3Int> replacedTiles = new();
+                    List<Vector3Int> nextStepOptions = I.Tiles.GetNeighbours(startingLocation, new Neighbours[] { Neighbours.Adjacent, Neighbours.Diagonals });
                     while (nextStepOptions.Count > 0)
                     {
                         List<Vector3Int> addToList = new(), removeFromList = new();
                         foreach (Vector3Int tile in nextStepOptions)
                         {
                             if (!replacedTiles.Contains(tile) && (includeBordering || areaTile == Get(tile)))
-                                Set(newTile, tile.x, tile.y, modifiedLayer);
+                            {
+                                if (I.Data.Get(tile.x, tile.y, tileLayerTracker.layer) == tileLayerTracker.tile)
+                                    tileLayerCounter++;
+                                for (int i = 0; i < modifiedLayers.Length; i++)
+                                    Set(newTiles[i], tile.x, tile.y, modifiedLayers[i]);
+                            }
                             if (areaTile == Get(tile) && !replacedTiles.Contains(tile))
                             {
-                                addToList.AddRange(Tiles.GetNeighbours(tile, new Neighbours[] { Neighbours.Adjacent, Neighbours.Diagonals }).Except(replacedTiles));
+                                addToList.AddRange(I.Tiles.GetNeighbours(tile, new Neighbours[] { Neighbours.Adjacent, Neighbours.Diagonals }).Except(replacedTiles));
                                 replacedTiles.Add(tile);
                             }
                             else
@@ -424,20 +506,30 @@ public class GS : MonoBehaviour
                         nextStepOptions.RemoveAll(item => removeFromList.Contains(item));
                         nextStepOptions.AddRange(addToList);
                     }
-                    Draw.All();
+                    I.Draw.All();
                 }
-                else
-                    Draw.SetRefresh(newTile, new(startingLocation.x, startingLocation.y, modifiedLayer));
+                else if (includeBordering)
+                {
+                    if (I.Data.Get(startingLocation.x, startingLocation.y, tileLayerTracker.layer) == tileLayerTracker.tile)
+                        tileLayerCounter++;
+                    for (int i = 0; i < modifiedLayers.Length; i++)
+                        I.Draw.SetRefresh(newTiles[i], startingLocation.x, startingLocation.y, modifiedLayers[i]);
+                }
             }
+            return tileLayerCounter;
+        }
+        public void FloodFill(string areaTile, string newTile, Vector3Int startingLocation, int modifedLayer, (string tile, int layer) tileLayerTracker = default, Neighbours[] neighboringTilesDefinition = null, bool includeBordering = true)
+        {
+            FloodFill(areaTile, new string[] {newTile}, startingLocation, new int[] {modifedLayer}, tileLayerTracker);
         }
     }
-    public static class Clear
+    public class clear
     {
-        public static void Tile(int x, int y, int z)
+        public void Tile(int x, int y, int z)
         {
-            grid.Remove(new(x, y, z));
+            I.grid.Remove(new(x, y, z));
         }
-        private static void ClearLayerBuilder<TValue>(int layer, Dictionary<Vector3Int, TValue> grid)
+        private void ClearLayerBuilder<TValue>(int layer, Dictionary<Vector3Int, TValue> grid)
         {
             List<Vector3Int> keysToRemove = new();
             foreach (Vector3Int key in grid.Keys)
@@ -448,75 +540,72 @@ public class GS : MonoBehaviour
             foreach (Vector3Int key in keysToRemove)
                 grid.Remove(key);
         }
-        public static void Data()
+        public void Data()
         {
-            grid.Clear();
+            I.grid.Clear();
         }
-        public static void DataLayer(int layer)
+        public void DataLayer(int layer)
         {
-            ClearLayerBuilder(layer, grid);
+            ClearLayerBuilder(layer, I.grid);
         }
-        public static void DataRender()
-        {
-            Data();
-            Draw.All();
-        }
-        public static void Color()
-        {
-            gridColors.Clear();
-        }
-        public static void ColorLayer(int layer)
-        {
-            ClearLayerBuilder(layer, gridColors);
-        }
-        public static void ColorRender()
-        {
-            Color();
-            Draw.All();
-        }
-        public static void All()
+        public void DataRender()
         {
             Data();
+            I.Draw.All();
+        }
+        public void Color()
+        {
+            I.gridColors.Clear();
+        }
+        public void ColorLayer(int layer)
+        {
+            ClearLayerBuilder(layer, I.gridColors);
+        }
+        public void ColorRender()
+        {
+            Color();
+            I.Draw.All();
+        }
+        public void All()
+        {
+            Data();
             Color();
         }
-        public static void AllRender()
+        public void AllRender()
         {
             All();
-            Draw.All();
+            I.Draw.All();
         }
     }
-    public static class Interact
+    public class interact
     {
-        public static Vector2Int Hover()
+        public Vector2Int Hover()
         {
-            if (tileCount.x == 0 || tileCount.y == 0)
+            if (I.tileCount.x == 0 || I.tileCount.y == 0)
                 return new();
-            Vector2 topLeftMostTile = Tiles.Position(0, 0, 0);
+            Vector2 topLeftMostTile = I.Tiles.Position(0, 0, 0);
             Vector2 realMouse = Input.mousePosition;
             if (!(realMouse.x >= 0 && realMouse.y >= 0 && realMouse.x <= Screen.width && realMouse.y <= Screen.height))
-            {
-                Debug.LogWarning("Není možno zjistit pozici myši, bude vracen -Vector2Int.one!");
                 return -Vector2Int.one;
-            }
-            Vector2 mousePosition = myCamera.ScreenToWorldPoint(realMouse);
-            return new((int)Math.Round((mousePosition.x - topLeftMostTile.x) / tileSize.x), (int)Math.Round((topLeftMostTile.y - mousePosition.y) / tileSize.y));
+            Vector2 mousePosition = I.myCamera.ScreenToWorldPoint(realMouse);
+            return new((int)Math.Round((mousePosition.x - topLeftMostTile.x) / I.tileSize.x), (int)Math.Round((topLeftMostTile.y - mousePosition.y) / I.tileSize.y));
 
         }
-        public static void GeneralInteraction<T>(T set, int z, bool interacting, bool interactOnlyWhenRendered)
+        public void GeneralInteraction<T>(T set, int z, bool interacting, bool interactOnlyWhenRendered = true)
         {
             Vector2Int hoveredTile = Hover();
-            if ((!interactOnlyWhenRendered || Object.Tile(hoveredTile.x, hoveredTile.y, z) != null) && Tiles.ContainedWithinGrid(new(hoveredTile.x, hoveredTile.y, z)) && interacting)
-                Draw.SetRefresh(set, new(hoveredTile.x, hoveredTile.y, z));
+            if ((!interactOnlyWhenRendered || I.Object.Tile(hoveredTile.x, hoveredTile.y, z) != null) && I.Tiles.ContainedWithinGrid(new(hoveredTile.x, hoveredTile.y, z)) && interacting)
+                I.Draw.SetRefresh(set, new(hoveredTile.x, hoveredTile.y, z));
         }
-        public static Vector2Int GetHoverOnCondition(bool condition, bool interactOnlyWhenRendered = true, int layer = 0)
+        public Vector2Int GetHoverOnCondition(bool condition, int layer, bool interactOnlyWhenRendered = true)
         {
             Vector2Int hoveredTile = Hover();
-            if (condition && (!interactOnlyWhenRendered || Object.Tile(hoveredTile.x, hoveredTile.y, layer)))
+            if (condition && (!interactOnlyWhenRendered || I.Object.Tile(hoveredTile.x, hoveredTile.y, layer)))
                 return hoveredTile;
             return -Vector2Int.one;
         }
 
-        public static void MouseInteraction<T>(T set, int z, Interactions interaction = Interactions.Click, Button button = Button.Left, bool interactOnlyWhenRendered = true)
+        public void MouseInteraction<T>(T set, int z, Interactions interaction = Interactions.Click, Button button = Button.Left, bool interactOnlyWhenRendered = true)
         {
             bool isInteracting = interaction switch
             {
@@ -528,13 +617,13 @@ public class GS : MonoBehaviour
             };
             GeneralInteraction(set, z, isInteracting, interactOnlyWhenRendered);
         }
-        public static void SetRefreshTileHoveredOver<T>(T set, int z)
+        public void SetRefreshTileHoveredOver<T>(T set, int z)
         {
             Vector2Int tilePosition = Hover();
             Vector3Int positionProper = new Vector3Int(tilePosition.x, tilePosition.y, z);
-            Vector3Int previousTilePosition = hoveringTileString.pos;
+            Vector3Int previousTilePosition = I.hoveringTileString.pos;
             if (previousTilePosition == -Vector3Int.one)
-                previousTilePosition = hoveringTileColor.pos;
+                previousTilePosition = I.hoveringTileColor.pos;
 
             Type type = typeof(T);
             if (!(type == typeof(string) || type == typeof(Color)))
@@ -542,7 +631,7 @@ public class GS : MonoBehaviour
                 Debug.LogError("Tato funkce podporuje jen string a Color!");
                 return;
             }
-            GameObject obj = Object.Tile(positionProper);
+            GameObject obj = I.Object.Tile(positionProper);
             bool prevMouseOutOfBounds = previousTilePosition == -Vector3Int.one;
             if (obj == null)
             {
@@ -550,100 +639,100 @@ public class GS : MonoBehaviour
                 {
                     if (type == typeof(string))
                     {
-                        Draw.SetRefresh(hoveringTileString.data, previousTilePosition);
-                        hoveringTileString = (-Vector3Int.one, "");
+                        I.Draw.SetRefresh(I.hoveringTileString.data, previousTilePosition);
+                        I.hoveringTileString = (-Vector3Int.one, "");
                     }
                     else if (type == typeof(Color))
                     {
-                        Draw.SetRefresh(hoveringTileColor.data, previousTilePosition);
-                        hoveringTileColor = (-Vector3Int.one, new());
+                        I.Draw.SetRefresh(I.hoveringTileColor.data, previousTilePosition);
+                        I.hoveringTileColor = (-Vector3Int.one, new());
                     }
                 }
                 return;
             }
-            string name = Object.SpriteNameByObject(obj);
+            string name = I.Object.SpriteName(obj);
             if (previousTilePosition != positionProper)
             {
                 if (type == typeof(string))
                 {
                     if (!prevMouseOutOfBounds)
-                        Draw.SetRefresh(hoveringTileString.data, previousTilePosition);
-                    hoveringTileString = (positionProper, name);
+                        I.Draw.SetRefresh(I.hoveringTileString.data, previousTilePosition);
+                    I.hoveringTileString = (positionProper, name);
                 }
                 else if (type == typeof(Color))
                 {
                     if (!prevMouseOutOfBounds)
-                        Draw.SetRefresh(hoveringTileColor.data, previousTilePosition);
-                    hoveringTileColor = (positionProper, Data.GetColor(positionProper));
+                        I.Draw.SetRefresh(I.hoveringTileColor.data, previousTilePosition);
+                    I.hoveringTileColor = (positionProper, I.Data.GetColor(positionProper));
                 }
 
             }
             else
-                Draw.SetRefresh(set, positionProper);
+                I.Draw.SetRefresh(set, positionProper);
         }
     }
-    public static class Tiles
+    public class tiles
     {
-        public static Vector3 Position(int x, int y, int z)
+        public Vector3 Position(int x, int y, int z)
         {
-            Vector3 resultPosition = new Vector3(gridPosition.x + x * tileSize.x, gridPosition.y - y * tileSize.y, gridPosition.z + z);
-            if (positionFixedToCamera.x != 0)
+            Vector3 resultPosition = new Vector3(I.gridPosition.x + x * I.tileSize.x, I.gridPosition.y - y * I.tileSize.y, I.gridPosition.z + z);
+            if (I.positionFixedToCamera.x != 0)
             {
-                float totalGridWidth = tileCount.x * tileSize.x;
-                float centerOffX = (rightBoundX - leftBoundX - totalGridWidth) * cameraOccupationOffset.x;
-                resultPosition.x = leftBoundX + x * tileSize.x + tileSize.x / 2 + centerOffX;
+                float totalGridWidth = I.tileCount.x * I.tileSize.x;
+                float centerOffX = (I.rightBoundX - I.leftBoundX - totalGridWidth) * I.cameraOccupationOffset.x;
+                resultPosition.x = I.leftBoundX + x * I.tileSize.x + I.tileSize.x / 2 + centerOffX;
             }
-            if (positionFixedToCamera.y != 0)
+            if (I.positionFixedToCamera.y != 0)
             {
-                float totalGridHeight = tileCount.y * tileSize.y;
-                float centerOffY = (upBoundY - downBoundY - totalGridHeight) * cameraOccupationOffset.y;
-                resultPosition.y = upBoundY - y * tileSize.y - tileSize.y / 2 - centerOffY;
+                float totalGridHeight = I.tileCount.y * I.tileSize.y;
+                float centerOffY = (I.upBoundY - I.downBoundY - totalGridHeight) * I.cameraOccupationOffset.y;
+                resultPosition.y = I.upBoundY - y * I.tileSize.y - I.tileSize.y / 2 - centerOffY;
             }
-            if (positionFixedToCamera.z != 0)
-                resultPosition.z = z + myCamera.transform.position.z + 10;
+            if (I.positionFixedToCamera.z != 0)
+                resultPosition.z = z + I.myCamera.transform.position.z + 10;
             return resultPosition;
         }
-        public static Vector2 GetScale()
+        public Vector2 GetScale()
         {
-            Vector2 maxTileUnits = new Vector2(0, 2 * myCamera.orthographicSize * maxOccupiedSpace.y); maxTileUnits.x = maxTileUnits.y * myCamera.aspect / maxOccupiedSpace.y * maxOccupiedSpace.x;
-            Vector2 possibleScale = new Vector2(maxTileUnits.x / tileCount.x, maxTileUnits.y / tileCount.y);
-            float newScale = 3 * gridScale;
-            if (dynamicScaling)
+            Vector2 maxTileUnits = new Vector2(0, 2 * I.myCamera.orthographicSize * I.maxOccupiedSpace.y); maxTileUnits.x = maxTileUnits.y * I.myCamera.aspect / I.maxOccupiedSpace.y * I.maxOccupiedSpace.x;
+            Vector2 possibleScale = new Vector2(maxTileUnits.x / I.tileCount.x, maxTileUnits.y / I.tileCount.y);
+            float newScale = 3 * I.gridScale;
+            if (I.dynamicScaling)
                 newScale *= Math.Min(possibleScale.x, possibleScale.y);
             return new Vector2(newScale, newScale) / 0.96f;
         }
-        public static void RenderBounds(int zLayer, out int startX, out int startY, out int endX, out int endY)
+        public void RenderBounds(int zLayer, out int startX, out int startY, out int endX, out int endY)
         {
-            Vector3 gridTopLeft = Position(0, 0, zLayer), gridBottomRight = Position(tileCount.x - 1, tileCount.y - 1, zLayer);
-            gridTopLeft.x -= tileSize.x / 2; gridTopLeft.y += tileSize.y / 2;
-            gridBottomRight.x += tileSize.x / 2; gridBottomRight.y -= tileSize.y / 2;
-            Vector3 cameraTopLeft = new Vector3(leftBoundX, upBoundY, zLayer), cameraBottomRight = new Vector3(rightBoundX, downBoundY, zLayer);
+            Vector3 gridTopLeft = Position(0, 0, zLayer), gridBottomRight = Position(I.tileCount.x - 1, I.tileCount.y - 1, zLayer);
+            gridTopLeft.x -= I.tileSize.x / 2; gridTopLeft.y += I.tileSize.y / 2;
+            gridBottomRight.x += I.tileSize.x / 2; gridBottomRight.y -= I.tileSize.y / 2;
+            Vector3 cameraTopLeft = new Vector3(I.leftBoundX, I.upBoundY, zLayer), cameraBottomRight = new Vector3(I.rightBoundX, I.downBoundY, zLayer);
 
-            startX = Math.Max(0, (int)Math.Floor((cameraTopLeft.x - gridTopLeft.x) / tileSize.x));
-            startY = Math.Max(0, (int)Math.Floor((gridTopLeft.y - cameraTopLeft.y) / tileSize.y));
-            endX = Math.Min(tileCount.x, tileCount.x - (int)Math.Floor((gridBottomRight.x - cameraBottomRight.x) / tileSize.x));
-            endY = Math.Min(tileCount.y, tileCount.y - (int)Math.Floor((cameraBottomRight.y - gridBottomRight.y) / tileSize.y));
+            startX = Math.Max(0, (int)Math.Floor((cameraTopLeft.x - gridTopLeft.x) / I.tileSize.x));
+            startY = Math.Max(0, (int)Math.Floor((gridTopLeft.y - cameraTopLeft.y) / I.tileSize.y));
+            endX = Math.Min(I.tileCount.x, I.tileCount.x - (int)Math.Floor((gridBottomRight.x - cameraBottomRight.x) / I.tileSize.x));
+            endY = Math.Min(I.tileCount.y, I.tileCount.y - (int)Math.Floor((cameraBottomRight.y - gridBottomRight.y) / I.tileSize.y));
         }
-        public static int GetIndex(Vector3Int location)
+        public int GetIndex(Vector3Int location)
         {
             if (!ContainedWithinGrid(location))
                 return -1;
-            return location.y * tileCount.x + location.x + location.z * tileCount.x * tileCount.y;
+            return location.y * I.tileCount.x + location.x + location.z * I.tileCount.x * I.tileCount.y;
         }
-        public static Vector3Int GetLocation(int index)
+        public Vector3Int GetLocation(int index)
         {
-            if (index < 0 || index > tileCount.x * tileCount.y * defaultTile.Length)
+            if (index < 0 || index > I.tileCount.x * I.tileCount.y * I.defaultTile.Length)
                 return -Vector3Int.one;
-            return new(index % tileCount.x, (int)Math.Floor(index / (float)tileCount.x), (int)Math.Floor(index / (float)(tileCount.x * tileCount.y)));
+            return new(index % I.tileCount.x, (int)Math.Floor(index / (float)I.tileCount.x), (int)Math.Floor(index / (float)(I.tileCount.x * I.tileCount.y)));
         }
-        public static bool ContainedWithinGrid(Vector3Int location)
+        public bool ContainedWithinGrid(Vector3Int location)
         {
-            return location.x >= 0 && location.y >= 0 && location.z >= 0 && location.x < tileCount.x && location.y < tileCount.y && location.z < defaultTile.Length;
+            return location.x >= 0 && location.y >= 0 && location.z >= 0 && location.x < I.tileCount.x && location.y < I.tileCount.y && location.z < I.defaultTile.Length;
         }
-        public static List<Vector3Int> GetNeighbours(Vector3Int location, Neighbours[] neighbouringTilesDefiniton = null)
+        public List<Vector3Int> GetNeighbours(Vector3Int location, Neighbours[] neighbouringTilesDefiniton = null)
         {
             if (neighbouringTilesDefiniton == null)
-                neighbouringTilesDefiniton = commonNeighboursDefinition;
+                neighbouringTilesDefiniton = I.commonNeighboursDefinition;
             List<Vector3Int> borders = new();
             List<Vector2Int> offsets = new();
             foreach (Neighbours neigh in neighbouringTilesDefiniton)
@@ -660,92 +749,90 @@ public class GS : MonoBehaviour
             for (int i = 0; i < offsets.Count; i++)
             {
                 Vector3Int offsetV3 = new(location.x + offsets[i].x, location.y + offsets[i].y, location.z);
-                if (Tiles.ContainedWithinGrid(offsetV3))
+                if (I.Tiles.ContainedWithinGrid(offsetV3))
                     borders.Add(offsetV3);
             }
             return borders;
         }
-        public static int NeighbouringSpriteCount(string spriteName, Vector3Int location)
+        public int NeighbouringSpriteCount(string spriteName, Vector3Int location)
         {
             int count = 0;
             List<Vector3Int> neighbours = GetNeighbours(location);
             foreach (Vector3Int offsetedLoc in neighbours)
             {
-                if (Data.Get(offsetedLoc.x, offsetedLoc.y, location.z) == spriteName)
+                if (I.Data.Get(offsetedLoc.x, offsetedLoc.y, location.z) == spriteName)
                     count++;
             }
             return count;
         }
-        public static Sprite GetSpriteByName(string spriteName)
+        public Sprite GetSpriteByName(string spriteName)
         {
-            for (int i = 0; i < spriteString.Count; i++)
+            for (int i = 0; i < I.spriteString.Count; i++)
             {
-                if (spriteString[i] == spriteName)
-                    return tileSprites[i];
+                if (I.spriteString[i] == spriteName)
+                    return I.tileSprites[i];
             }
             return null;
         }
-        public static bool Obscured(int x, int y, int z)
+        public bool Obscured(int x, int y, int z)
         {
-            if (obscuredTiles.Contains(new(x, y)))
+            if (I.obscuredTiles.Contains(new(x, y)))
                 return true;
-            int index = Draw.GetIndexOfSprite(x, y, z - 1);
-            if (index != -1 && !containsAlpha[index])
+            int index = I.Draw.GetIndexOfSprite(x, y, z - 1);
+            if (index != -1 && !I.containsAlpha[index])
             {
-                obscuredTiles.Add(new(x, y));
+                I.obscuredTiles.Add(new(x, y));
                 return true;
             }
             return false;
         }
-        public static bool Opacity(int x, int y, int z)
+        public bool Opacity(int x, int y, int z)
         {
-            if (Data.GetColor(x, y, z).a < 1)
+            if (I.Data.GetColor(x, y, z).a < 1)
                 return false;
-            int spriteIndex = Draw.GetIndexOfSprite(x, y, z);
-            return spriteIndex != -1 && !containsAlpha[spriteIndex];
+            int spriteIndex = I.Draw.GetIndexOfSprite(x, y, z);
+            return spriteIndex != -1 && !I.containsAlpha[spriteIndex];
         }
     }
-    public static class Object
+    public class objects
     {
-        public static GameObject Tile(int x, int y, int z)
+        public GameObject Tile(int x, int y, int z)
         {
             GameObject[] tiles = All();
             foreach (GameObject obj in tiles)
             {
-                if (obj.transform.position == Tiles.Position(x, y, z))
+                if (obj.transform.position == I.Tiles.Position(x, y, z))
                     return obj;
             }
             return null;
         }
-        public static GameObject Tile(Vector3Int location)
+        public GameObject Tile(Vector3Int location)
         {
             return Tile(location.x, location.y, location.z);
         }
-        public static Dictionary<int, GameObject> AllAtPosition(int x, int y)
+        public Dictionary<int, GameObject> AllAtPosition(int x, int y)
         {
             GameObject[] tiles = All();
             Dictionary<int, GameObject> result = new();
             foreach (GameObject obj in tiles)
             {
-                Vector3 posScan = obj.transform.position, posTile = Tiles.Position(x, y, 0);
+                Vector3 posScan = obj.transform.position, posTile = I.Tiles.Position(x, y, 0);
                 if (new Vector2(posScan.x, posScan.y) == new Vector2(posTile.x, posTile.y))
-                {
                     result.Add((int)(posScan.z - posTile.z - 1), obj);
-                }
             }
             return result;
         }
-        public static GameObject[] All()
+        public GameObject[] All()
         {
             return GameObject.FindGameObjectsWithTag("CloneTile");
         }
-        public static string SpriteNameByObject(GameObject obj)
+        public string SpriteName(GameObject obj)
         {
             Sprite spr = obj.GetComponent<SpriteRenderer>().sprite;
-            int index = tileSprites.IndexOf(spr);
+            int index = I.tileSprites.IndexOf(spr);
             if (index == -1)
                 return "";
-            return spriteString[index];
+            return I.spriteString[index];
         }
     }
 }
@@ -756,14 +843,14 @@ public class ButtonDrawGrid : Editor
     {
         base.OnInspectorGUI();
         if (GUILayout.Button("Update Grid"))
-            GS.Draw.All();
+            GS.I.Draw.All();
         if (GUILayout.Button("Restore Tile Data to Defaults"))
-            GS.Clear.AllRender();
+            GS.I.Clear.AllRender();
         if (GUILayout.Button("Delete Grid"))
-            GS.Draw.Delete();
+            GS.I.Draw.Delete();
         if (GUILayout.Button("Test Function A"))
         {
-            GS.Data.ScatterBeyondNeighbours("mine", 50, 1, new());
+            GS.I.Data.ScatterBeyondNeighbours("mine", 50, 1, new());
         }
     }
 }
