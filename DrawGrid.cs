@@ -9,8 +9,10 @@ public class GS : MonoBehaviour
     private List<string> spriteString = new();
     private float aspectRatio = 0, oldAspect = 0;
 
-    [SerializeField] private Camera myCamera;
-    [SerializeField] private GameObject tile;
+    private Camera myCamera;
+    private GameObject tile, cloneTileParent;
+    [HideInInspector] public Camera overrideCamera;
+
     [SerializeField] private Sprite[] defaultTile;
     [SerializeField] public List<Sprite> tileSprites;
     public Neighbours[] commonNeighboursDefinition = new Neighbours[] { Neighbours.Adjacent, Neighbours.Diagonals };
@@ -86,13 +88,15 @@ public class GS : MonoBehaviour
     public objects Object { get; private set; }
     private void Awake()
     {
+        NoCamaraDetection();
+        cloneTileParent = new("Rendered Tiles");
+        tile = new("Tile Blueprint", typeof(SpriteRenderer));
+        tile.transform.SetParent(cloneTileParent.transform);
+        tile.SetActive(false);
         if (instance == null)
             instance = this;
         else if (instance != this)
-        {
-            Debug.LogWarning($"Lze mít pouze 1 GameObject, a tak bude tento GameObject: \"{gameObject}\" smazán");
-            Destroy(gameObject);
-        }
+            Debug.LogError($"V projektu může existovat jen 1 instance komponentu GS.cs! Pro více 'gridů' můžete použít vrstvy!");
         Draw = new();
         Data = new();
         Clear = new();
@@ -102,25 +106,77 @@ public class GS : MonoBehaviour
     }
     private void Start()
     {
-        I.Draw.RefreshSprites();
-        I.Draw.UpdateCameraValues();
+        I.RefreshSprites();
+        I.UpdateCameraValues();
     }
     private void Update()
     {
         if (renderOnAspectChange && oldAspect != myCamera.aspect)
             I.Draw.All();
+        if (myCamera != Camera.main)
+        {
+            NoCamaraDetection();
+            UpdateCameraValues();
+        }
         if (alwaysUpdate)
         {
-            I.Draw.RefreshSprites();
-            I.Draw.UpdateCameraValues();
+            RefreshSprites();
+            UpdateCameraValues();
             I.Draw.All();
         }
+    }
+    private void NoCamaraDetection()
+    {
+        if (overrideCamera == null)
+            myCamera = Camera.main;
+        else
+            myCamera = overrideCamera;
+        if (myCamera == null)
+            Debug.LogError("Nebyla nalezena hlavní kamera!");
+    }
+    private void RefreshSprites()
+    {
+        foreach (Sprite spr in I.defaultTile)
+        {
+            if (!I.tileSprites.Contains(spr))
+                I.tileSprites.Add(spr);
+        }
+        foreach (Sprite spr in I.tileSprites)
+        {
+            string handledString = spr.ToString();
+            try
+            {
+                handledString = handledString.Substring(0, handledString.LastIndexOf("_0"));
+            }
+            catch { }
+            if (!I.spriteString.Contains(handledString))
+                I.spriteString.Add(handledString);
+            if (!I.renderObscuredTiles)
+                I.containsAlpha.Add(I.Draw.SpriteTransparent(spr));
+        }
+        try
+        {
+            tile.GetComponent<SpriteRenderer>().sprite = tileSprites[0];
+        }
+        catch
+        {
+            Debug.LogError("Nebyl načten žádný sprite!");
+        }
+    }
+    private void UpdateCameraValues()
+    {
+        Vector3 cameraPos = I.myCamera.transform.position;
+        float orthSize = I.myCamera.orthographicSize;
+        I.aspectRatio = I.myCamera.aspect;
+        I.leftBoundX = cameraPos.x - orthSize * I.aspectRatio; I.rightBoundX = cameraPos.x + orthSize * I.aspectRatio;
+        I.upBoundY = cameraPos.y + orthSize; I.downBoundY = cameraPos.y - orthSize;
+        I.tileSize = I.tile.GetComponent<SpriteRenderer>().bounds.size;
     }
     public class draw
     {
         public void All()
         {
-            RefreshSprites();
+            I.RefreshSprites();
             Delete();
             I.obscuredTiles.RemoveAll(i => true);
             if (I.maxOccupiedSpace.x > 0 && I.maxOccupiedSpace.y > 0 && I.tileCount.x > 0 && I.tileCount.y > 0)
@@ -160,7 +216,9 @@ public class GS : MonoBehaviour
                     tileSprite = I.Tiles.GetSpriteByName(I.grid[tileGridPosition]);
                 if (tileSprite != null)
                 {
-                    GameObject clonedTile = Instantiate(I.tile);
+                    GameObject clonedTile = Instantiate(I.tile, I.cloneTileParent.transform);
+                    clonedTile.name = $"Tile at {x}, {y}, {z}";
+                    clonedTile.SetActive(true);
                     clonedTile.transform.position = I.Tiles.Position(x, y, z);
                     clonedTile.transform.localScale = new Vector3(tileScale.x, tileScale.y, 1);
                     clonedTile.tag = "CloneTile";
@@ -193,27 +251,6 @@ public class GS : MonoBehaviour
             Color conversion = Color.HSVToRGB(h / 360f, s / 100f, v / 100f);
             return new(conversion.r, conversion.g, conversion.b, a / 100f);
         }
-        public void RefreshSprites()
-        {
-            foreach (Sprite spr in I.defaultTile)
-            {
-                if (!I.tileSprites.Contains(spr))
-                    I.tileSprites.Add(spr);
-            }
-            foreach (Sprite spr in I.tileSprites)
-            {
-                string handledString = spr.ToString();
-                try
-                {
-                    handledString = handledString.Substring(0, handledString.LastIndexOf("_0"));
-                }
-                catch { }
-                if (!I.spriteString.Contains(handledString))
-                    I.spriteString.Add(handledString);
-                if (!I.renderObscuredTiles)
-                    I.containsAlpha.Add(SpriteTransparent(spr));
-            }
-        }
         public bool SpriteTransparent(Sprite spr)
         {
             if (spr == null)
@@ -229,15 +266,6 @@ public class GS : MonoBehaviour
         public int GetIndexOfSprite(int x, int y, int z)
         {
             return I.spriteString.IndexOf(I.Data.Get(x, y, z));
-        }
-        public void UpdateCameraValues()
-        {
-            Vector3 cameraPos = I.myCamera.transform.position;
-            float orthSize = I.myCamera.orthographicSize;
-            I.aspectRatio = I.myCamera.aspect;
-            I.leftBoundX = cameraPos.x - orthSize * I.aspectRatio; I.rightBoundX = cameraPos.x + orthSize * I.aspectRatio;
-            I.upBoundY = cameraPos.y + orthSize; I.downBoundY = cameraPos.y - orthSize;
-            I.tileSize = I.tile.GetComponent<SpriteRenderer>().bounds.size;
         }
         public void Delete()
         {
@@ -431,7 +459,8 @@ public class GS : MonoBehaviour
             {
                 Set(set2, location);
                 return DataChangedTo.Second;
-            } else if (tileData == set2)
+            }
+            else if (tileData == set2)
             {
                 Set(set1, location);
                 return DataChangedTo.First;
@@ -520,7 +549,7 @@ public class GS : MonoBehaviour
         }
         public void FloodFill(string areaTile, string newTile, Vector3Int startingLocation, int modifedLayer, (string tile, int layer) tileLayerTracker = default, Neighbours[] neighboringTilesDefinition = null, bool includeBordering = true)
         {
-            FloodFill(areaTile, new string[] {newTile}, startingLocation, new int[] {modifedLayer}, tileLayerTracker);
+            FloodFill(areaTile, new string[] { newTile }, startingLocation, new int[] { modifedLayer }, tileLayerTracker);
         }
     }
     public class clear
